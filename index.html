@@ -1,0 +1,36 @@
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPNBIHAR — Guest Studio</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>GPNBIHAR NEWS STUDIO</h1>
+        <p id="status">Ready to join</p>
+      </header>
+
+      <section class="controls">
+        <label>
+          Your name
+          <input id="guestName" value="Browser Guest" maxlength="60" />
+        </label>
+        <button id="joinBtn">Join studio</button>
+        <button id="micBtn" disabled>Mute microphone</button>
+        <button id="cameraBtn" disabled>Turn camera off</button>
+        <button id="leaveBtn" disabled>Leave studio</button>
+      </section>
+
+      <h2>Guest preview</h2>
+      <div id="localVideo" class="video-grid"></div>
+
+      <h2>Other participants</h2>
+      <div id="remoteVideo" class="video-grid"></div>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
