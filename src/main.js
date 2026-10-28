@@ -491,11 +491,11 @@ inviteBtn.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(inviteUrl.toString());
       setStatus(
-        'Secure guest invitation copied. It expires in 15 minutes and can be used once.',
+        'Reusable guest link copied. Share it with all guests; it expires in 4 hours.',
       );
     } catch {
       window.prompt(
-        'Copy this secure guest invitation link. It expires in 15 minutes and can be used once:',
+        'Copy this reusable guest invitation link. Share it with all guests; it expires in 4 hours:',
         inviteUrl.toString(),
       );
       setStatus('Guest invitation generated.');
