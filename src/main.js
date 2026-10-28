@@ -1,18 +1,19 @@
 
-import { Room, RoomEvent, TokenSource } from 'livekit-client';
-import './style.css';
-
-const TOKEN_SERVER_ID = 'gpnbihar-2g3stl';
-const ROOM_NAME = 'gpnbihar-poc-room';
+import { Room, RoomEvent } from 'livekit-client';import './style.css';
 
 const statusEl = document.querySelector('#status');
 const joinBtn = document.querySelector('#joinBtn');
 const leaveBtn = document.querySelector('#leaveBtn');
 const micBtn = document.querySelector('#micBtn');
 const cameraBtn = document.querySelector('#cameraBtn');
-const nameInput = document.querySelector('#guestName');
 const localVideo = document.querySelector('#localVideo');
 const remoteVideo = document.querySelector('#remoteVideo');
+
+const API_BASE = 'https://gpnbihar-backend.onrender.com';
+
+let sessionToken = null;
+let roomName = null;
+let anchorIdentity = null;
 
 let room;
 let micEnabled = true;
@@ -47,11 +48,6 @@ function removeTrack(track) {
 
 async function joinStudio() {
   if (joining || room) return;
-
-  if (TOKEN_SERVER_ID === 'YOUR_TOKEN_SERVER_ID') {
-    setStatus('Add your development token server ID in src/main.js.');
-    return;
-  }
 
   joining = true;
   joinBtn.disabled = true;
@@ -99,19 +95,47 @@ async function joinStudio() {
       setStatus('Disconnected');
     });
 
-    const tokenSource =
-      TokenSource.developmentTokenServer(TOKEN_SERVER_ID);
+    const accessCodeInput = document.querySelector('#accessCode');
 
-    const credentials = await tokenSource.fetch({
-      roomName: ROOM_NAME,
-      participantName: nameInput.value.trim() || 'Browser Guest',
-      participantIdentity: `guest-${crypto.randomUUID()}`,
-    });
+if (!accessCodeInput) {
+  throw new Error('Access-code input not found in index.html.');
+}
 
-    await newRoom.connect(
-      credentials.serverUrl,
-      credentials.participantToken,
-    );
+const accessCode = accessCodeInput.value.trim();
+
+if (!accessCode) {
+  throw new Error('Please enter the anchor access code.');
+}
+
+const response = await fetch(`${API_BASE}/anchor/session`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    access_code: accessCode,
+  }),
+});
+
+if (!response.ok) {
+  const errorBody = await response.text();
+  throw new Error(
+    `Anchor authentication failed (${response.status}): ${errorBody}`,
+  );
+}
+
+const credentials = await response.json();
+
+sessionToken = credentials.session_token;
+roomName = credentials.room_name;
+anchorIdentity = credentials.identity;
+
+await newRoom.connect(
+  credentials.server_url,
+  credentials.livekit_token,
+);
+
+
 
     console.log('[GPNBIHAR] Connected to room:', newRoom.name);
 console.log(
@@ -149,7 +173,7 @@ setStatus(
     micBtn.disabled = false;
     cameraBtn.disabled = false;
     leaveBtn.disabled = false;
-    setStatus('Connected — waiting for anchor');
+    setStatus('Anchor connected — waiting for guests');
   } catch (error) {
     console.error('[GPNBIHAR] Join failed:', error);
 
@@ -205,7 +229,7 @@ async function leaveStudio() {
   micBtn.disabled = true;
   cameraBtn.disabled = true;
 
-  setStatus('Ready to join');
+  setStatus('Ready to start');
 }
 
 joinBtn.addEventListener('click', joinStudio);
