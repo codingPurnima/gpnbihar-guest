@@ -1,5 +1,12 @@
 
-import { Room, RoomEvent } from 'livekit-client';import './style.css';
+import { Room, RoomEvent } from 'livekit-client';
+import './style.css';
+
+const API_BASE = 'https://gpnbihar-backend.onrender.com';
+const ROOM_NAME = 'gpnbihar-poc-room';
+
+const params = new URLSearchParams(window.location.search);
+const role = params.get('role') === 'guest' ? 'guest' : 'anchor';
 
 const statusEl = document.querySelector('#status');
 const joinBtn = document.querySelector('#joinBtn');
@@ -8,13 +15,20 @@ const micBtn = document.querySelector('#micBtn');
 const cameraBtn = document.querySelector('#cameraBtn');
 const localVideo = document.querySelector('#localVideo');
 const remoteVideo = document.querySelector('#remoteVideo');
+const accessCodeInput = document.querySelector('#accessCode');
+const guestNameInput = document.querySelector('#guestName');
+const accessCodeLabel = document.querySelector('#accessCodeLabel');
+const guestNameLabel = document.querySelector('#guestNameLabel');
+const inviteBtn = document.querySelector('#inviteBtn');
+const localHeading = document.querySelector('#localHeading');
 
-const API_BASE = 'https://gpnbihar-backend.onrender.com';
+accessCodeLabel.hidden = role !== 'anchor';
+guestNameLabel.hidden = role !== 'guest';
+inviteBtn.hidden = role !== 'anchor';
+localHeading.textContent =
+  role === 'anchor' ? 'Anchor preview' : 'Guest preview';
 
 let sessionToken = null;
-let roomName = null;
-let anchorIdentity = null;
-
 let room;
 let micEnabled = true;
 let cameraEnabled = true;
@@ -46,6 +60,42 @@ function removeTrack(track) {
   });
 }
 
+async function getCredentials() {
+  let endpoint;
+  let body;
+
+  if (role === 'anchor') {
+    const accessCode = accessCodeInput.value.trim();
+
+    if (!accessCode) {
+      throw new Error('Please enter the anchor access code.');
+    }
+
+    endpoint = '/anchor/session';
+    body = { access_code: accessCode };
+  } else {
+    endpoint = '/guest/session';
+    body = {
+      name: guestNameInput.value.trim() || 'Browser Guest',
+    };
+  }
+
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(
+      `Could not obtain ${role} credentials (${response.status}): ${errorBody}`,
+    );
+  }
+
+  return response.json();
+}
+
 async function joinStudio() {
   if (joining || room) return;
 
@@ -61,7 +111,6 @@ async function joinStudio() {
   room = newRoom;
 
   try {
-    // Register event listeners before connecting.
     newRoom.on(
       RoomEvent.TrackSubscribed,
       (track, publication, participant) => {
@@ -70,7 +119,6 @@ async function joinStudio() {
         if (track.kind === 'video') {
           addVideo(track, remoteVideo, label);
         } else if (track.kind === 'audio') {
-          // Attach remote audio so the guest can hear the anchor.
           const audioElement = track.attach();
           audioElement.dataset.trackSid = publication.trackSid;
           document.body.appendChild(audioElement);
@@ -78,10 +126,7 @@ async function joinStudio() {
       },
     );
 
-    newRoom.on(
-      RoomEvent.TrackUnsubscribed,
-      (track) => removeTrack(track),
-    );
+    newRoom.on(RoomEvent.TrackUnsubscribed, removeTrack);
 
     newRoom.on(RoomEvent.ParticipantConnected, (participant) => {
       setStatus(`${participant.name || participant.identity} joined`);
@@ -91,73 +136,32 @@ async function joinStudio() {
       setStatus(`${participant.name || participant.identity} left`);
     });
 
-    newRoom.on(RoomEvent.Disconnected, () => {
-      setStatus('Disconnected');
-    });
+    const credentials = await getCredentials();
 
-    const accessCodeInput = document.querySelector('#accessCode');
+    if (
+      role === 'anchor' &&
+      credentials.room_name !== ROOM_NAME
+    ) {
+      throw new Error('The backend returned an unexpected room.');
+    }
 
-if (!accessCodeInput) {
-  throw new Error('Access-code input not found in index.html.');
-}
+    sessionToken =
+      role === 'anchor' ? credentials.session_token : null;
 
-const accessCode = accessCodeInput.value.trim();
+    await newRoom.connect(
+      credentials.server_url,
+      credentials.livekit_token,
+    );
 
-if (!accessCode) {
-  throw new Error('Please enter the anchor access code.');
-}
-
-const response = await fetch(`${API_BASE}/anchor/session`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    access_code: accessCode,
-  }),
-});
-
-if (!response.ok) {
-  const errorBody = await response.text();
-  throw new Error(
-    `Anchor authentication failed (${response.status}): ${errorBody}`,
-  );
-}
-
-const credentials = await response.json();
-
-sessionToken = credentials.session_token;
-roomName = credentials.room_name;
-anchorIdentity = credentials.identity;
-
-await newRoom.connect(
-  credentials.server_url,
-  credentials.livekit_token,
-);
-
-
-
-    console.log('[GPNBIHAR] Connected to room:', newRoom.name);
-console.log(
-  '[GPNBIHAR] Local identity:',
-  newRoom.localParticipant.identity,
-);
-console.log(
-  '[GPNBIHAR] Existing remote participants:',
-  [...newRoom.remoteParticipants.values()].map((p) => ({
-    identity: p.identity,
-    name: p.name,
-  })),
-);
-
-setStatus(
-  `Connected to ${newRoom.name}. Remotes: ${newRoom.remoteParticipants.size}`,
-);
+    console.log('[GPNBIHAR] Connected:', newRoom.name);
+    console.log(
+      '[GPNBIHAR] Identity:',
+      newRoom.localParticipant.identity,
+    );
 
     await newRoom.localParticipant.setCameraEnabled(true);
     await newRoom.localParticipant.setMicrophoneEnabled(true);
 
-    // Show the guest's own camera preview without playing their mic locally.
     for (const publication of
       newRoom.localParticipant.videoTrackPublications.values()) {
       if (publication.track) {
@@ -173,11 +177,15 @@ setStatus(
     micBtn.disabled = false;
     cameraBtn.disabled = false;
     leaveBtn.disabled = false;
-    setStatus('Anchor connected — waiting for guests');
+
+    setStatus(
+      role === 'anchor'
+        ? 'Anchor connected — waiting for guests'
+        : 'Guest connected to the studio',
+    );
   } catch (error) {
     console.error('[GPNBIHAR] Join failed:', error);
 
-    // Clean up the failed connection without hiding the error.
     const failedRoom = room;
     room = undefined;
 
@@ -189,17 +197,14 @@ setStatus(
 
     localVideo.replaceChildren();
     remoteVideo.replaceChildren();
-
-    document.querySelectorAll('audio[data-track-sid]').forEach((el) => {
-      el.remove();
-    });
+    document.querySelectorAll('audio[data-track-sid]').forEach((el) => el.remove());
 
     joinBtn.disabled = false;
     leaveBtn.disabled = true;
     micBtn.disabled = true;
     cameraBtn.disabled = true;
 
-    setStatus(`Connection failed: ${error?.message ?? String(error)}`);
+    setStatus(`Connection failed: ${error.message || String(error)}`);
   } finally {
     joining = false;
   }
@@ -215,12 +220,9 @@ async function leaveStudio() {
 
   localVideo.replaceChildren();
   remoteVideo.replaceChildren();
+  document.querySelectorAll('audio[data-track-sid]').forEach((el) => el.remove());
 
-  // Remove any remote audio elements left attached to the document.
-  document.querySelectorAll('audio[data-track-sid]').forEach((el) => {
-    el.remove();
-  });
-
+  sessionToken = null;
   micEnabled = true;
   cameraEnabled = true;
 
@@ -263,5 +265,19 @@ cameraBtn.addEventListener('click', async () => {
         addVideo(publication.track, localVideo, 'YOU');
       }
     }
+  }
+});
+
+inviteBtn.addEventListener('click', async () => {
+  const inviteUrl = new URL(window.location.href);
+  inviteUrl.search = '';
+  inviteUrl.searchParams.set('role', 'guest');
+
+  try {
+    await navigator.clipboard.writeText(inviteUrl.toString());
+    setStatus('Guest invitation link copied');
+  } catch (error) {
+    console.error('[GPNBIHAR] Copy link failed:', error);
+    window.prompt('Copy this guest invitation link:', inviteUrl.toString());
   }
 });
