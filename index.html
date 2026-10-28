@@ -4,7 +4,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GPNBIHAR — Anchor Studio</title>
+    <title>GPNBIHAR NEWS STUDIO</title>
   </head>
   <body>
     <main>
@@ -14,14 +14,23 @@
       </header>
 
       <section class="controls">
-        <label>
+        <label id="accessCodeLabel">
           Anchor access code
           <input
             id="accessCode"
             type="password"
             autocomplete="current-password"
-            placeholder="Enter studio access code"
-            required
+            placeholder="Enter anchor access code"
+          />
+        </label>
+
+        <label id="guestNameLabel" hidden>
+          Your name
+          <input
+            id="guestName"
+            value=""
+            maxlength="60"
+            placeholder="Enter your name"
           />
         </label>
 
@@ -29,9 +38,11 @@
         <button id="micBtn" disabled>Mute microphone</button>
         <button id="cameraBtn" disabled>Turn camera off</button>
         <button id="leaveBtn" disabled>Leave studio</button>
+
+        <button id="inviteBtn" hidden>Copy guest invitation link</button>
       </section>
 
-      <h2>Anchor preview</h2>
+      <h2 id="localHeading">Anchor preview</h2>
       <div id="localVideo" class="video-grid"></div>
 
       <h2>Other participants</h2>
