@@ -313,6 +313,10 @@ async function joinStudio() {
     cameraBtn.disabled = false;
     leaveBtn.disabled = false;
 
+    if (role === 'anchor') {
+    startRecordingBtn.disabled = false;
+    stopRecordingBtn.disabled = true;
+  }
     setStatus(
       role === 'anchor'
         ? 'Anchor connected — waiting for guests'
@@ -338,6 +342,8 @@ async function joinStudio() {
     leaveBtn.disabled = true;
     micBtn.disabled = true;
     cameraBtn.disabled = true;
+    startRecordingBtn.disabled = true;
+    stopRecordingBtn.disabled = true;
 
     setStatus(`Connection failed: ${error.message || String(error)}`);
   } finally {
