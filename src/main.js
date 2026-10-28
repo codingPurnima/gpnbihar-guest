@@ -220,6 +220,7 @@ function removeTrack(track) {
   });
 }
 
+
 async function getCredentials() {
   let endpoint;
   let body;
@@ -234,9 +235,18 @@ async function getCredentials() {
     endpoint = '/anchor/session';
     body = { access_code: accessCode };
   } else {
+    const invitationToken = params.get('invite');
+
+    if (!invitationToken) {
+      throw new Error(
+        'This guest link has no invitation token. Ask the anchor for a new link.',
+      );
+    }
+
     endpoint = '/guest/session';
     body = {
       name: guestNameInput.value.trim() || 'Browser Guest',
+      invitation_token: invitationToken,
     };
   }
 
@@ -446,16 +456,54 @@ cameraBtn.addEventListener('click', async () => {
   }
 });
 
+
 inviteBtn.addEventListener('click', async () => {
-  const inviteUrl = new URL(window.location.href);
-  inviteUrl.search = '';
-  inviteUrl.searchParams.set('role', 'guest');
+  if (role !== 'anchor' || !sessionToken || !room) {
+    setStatus('Join the studio as anchor before inviting guests.');
+    return;
+  }
+
+  inviteBtn.disabled = true;
+  setStatus('Generating a secure guest invitation...');
 
   try {
-    await navigator.clipboard.writeText(inviteUrl.toString());
-    setStatus('Guest invitation link copied');
+    const response = await fetch(`${API_BASE}/guest/invite`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(
+        `Could not create invitation (${response.status}): ${errorBody}`,
+      );
+    }
+
+    const data = await response.json();
+
+    const inviteUrl = new URL(window.location.href);
+    inviteUrl.search = '';
+    inviteUrl.searchParams.set('role', 'guest');
+    inviteUrl.searchParams.set('invite', data.invitation_token);
+
+    try {
+      await navigator.clipboard.writeText(inviteUrl.toString());
+      setStatus(
+        'Secure guest invitation copied. It expires in 15 minutes and can be used once.',
+      );
+    } catch {
+      window.prompt(
+        'Copy this secure guest invitation link. It expires in 15 minutes and can be used once:',
+        inviteUrl.toString(),
+      );
+      setStatus('Guest invitation generated.');
+    }
   } catch (error) {
-    console.error('[GPNBIHAR] Copy link failed:', error);
-    window.prompt('Copy this guest invitation link:', inviteUrl.toString());
+    console.error('[GPNBIHAR] Invitation creation failed:', error);
+    setStatus(`Could not create invitation: ${error.message}`);
+  } finally {
+    inviteBtn.disabled = false;
   }
 });
