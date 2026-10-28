@@ -126,8 +126,10 @@ async function stopRecording() {
       if (!activeEgressId || recordingBusy) return;
 
       try {
+        const egressId = activeEgressId;
+
         const result = await recordingRequest(
-          `/recording/status/${encodeURIComponent(activeEgressId)}`,
+          `/recording/status/${encodeURIComponent(egressId)}`,
           'GET',
         );
 
@@ -135,11 +137,33 @@ async function stopRecording() {
 
         if (status.includes('complete')) {
           clearStatusPolling();
-          setRecordingStatus(
-            result.file_results?.length
-              ? `Recording complete. MP4: ${result.file_results[0].filename}`
-              : 'Recording complete.',
-          );
+          setRecordingStatus('Recording complete. Preparing download link...');
+
+          try {
+            const downloadData = await recordingRequest(
+              `/recording/download/${encodeURIComponent(egressId)}`,
+              'GET',
+            );
+
+            recordingStatus.replaceChildren();
+
+            const message = document.createElement('span');
+            message.textContent = `Recording complete: ${downloadData.filename} `;
+
+            const link = document.createElement('a');
+            link.href = downloadData.download_url;
+            link.textContent = 'Download MP4';
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+
+            recordingStatus.append(message, link);
+          } catch (downloadError) {
+            console.error('[GPNBIHAR] Download link failed:', downloadError);
+            setRecordingStatus(
+              `Recording completed, but the download link could not be created: ${downloadError.message}`,
+            );
+          }
+
           activeEgressId = null;
           startRecordingBtn.disabled = false;
         } else if (
@@ -168,6 +192,7 @@ async function stopRecording() {
     recordingBusy = false;
   }
 }
+
 
 startRecordingBtn.addEventListener('click', startRecording);
 stopRecordingBtn.addEventListener('click', stopRecording);
