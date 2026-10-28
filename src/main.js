@@ -22,6 +22,16 @@ const guestNameLabel = document.querySelector('#guestNameLabel');
 const inviteBtn = document.querySelector('#inviteBtn');
 const localHeading = document.querySelector('#localHeading');
 
+const startRecordingBtn = document.querySelector('#startRecordingBtn');
+const stopRecordingBtn = document.querySelector('#stopRecordingBtn');
+const recordingStatus = document.querySelector('#recordingStatus');
+
+
+const isAnchor = role === 'anchor';
+
+startRecordingBtn.hidden = !isAnchor;
+stopRecordingBtn.hidden = !isAnchor;
+
 accessCodeLabel.hidden = role !== 'anchor';
 guestNameLabel.hidden = role !== 'guest';
 inviteBtn.hidden = role !== 'anchor';
@@ -34,9 +44,134 @@ let micEnabled = true;
 let cameraEnabled = true;
 let joining = false;
 
+let activeEgressId = null;
+let recordingBusy = false;
+let statusPollTimer = null;
+
 function setStatus(message) {
   statusEl.textContent = message;
 }
+
+
+function setRecordingStatus(message) {
+  recordingStatus.textContent = message;
+}
+
+async function recordingRequest(path, method = 'POST') {
+  if (!sessionToken) {
+    throw new Error('Anchor session is missing. Rejoin the studio.');
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${sessionToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Recording request failed (${response.status}): ${detail}`);
+  }
+
+  return response.json();
+}
+
+function clearStatusPolling() {
+  if (statusPollTimer !== null) {
+    clearInterval(statusPollTimer);
+    statusPollTimer = null;
+  }
+}
+
+async function startRecording() {
+  if (role !== 'anchor' || !room || recordingBusy || activeEgressId) return;
+
+  recordingBusy = true;
+  startRecordingBtn.disabled = true;
+  stopRecordingBtn.disabled = true;
+  setRecordingStatus('Starting recording...');
+
+  try {
+    const result = await recordingRequest(
+      `/recording/start?room_name=${encodeURIComponent(room.name)}`,
+    );
+
+    activeEgressId = result.egress_id;
+    setRecordingStatus(`Recording started (${activeEgressId})`);
+    stopRecordingBtn.disabled = false;
+  } catch (error) {
+    console.error('[GPNBIHAR] Start recording failed:', error);
+    setRecordingStatus(`Could not start recording: ${error.message}`);
+    startRecordingBtn.disabled = false;
+  } finally {
+    recordingBusy = false;
+  }
+}
+
+async function stopRecording() {
+  if (role !== 'anchor' || !activeEgressId || recordingBusy) return;
+
+  recordingBusy = true;
+  stopRecordingBtn.disabled = true;
+  setRecordingStatus('Stopping recording...');
+
+  try {
+    await recordingRequest('/recording/stop');
+
+    setRecordingStatus('Stop requested. Waiting for the MP4 to finish...');
+    clearStatusPolling();
+
+    statusPollTimer = setInterval(async () => {
+      if (!activeEgressId || recordingBusy) return;
+
+      try {
+        const result = await recordingRequest(
+          `/recording/status/${encodeURIComponent(activeEgressId)}`,
+          'GET',
+        );
+
+        const status = String(result.status || '').toLowerCase();
+
+        if (status.includes('complete')) {
+          clearStatusPolling();
+          setRecordingStatus(
+            result.file_results?.length
+              ? `Recording complete. MP4: ${result.file_results[0].filename}`
+              : 'Recording complete.',
+          );
+          activeEgressId = null;
+          startRecordingBtn.disabled = false;
+        } else if (
+          status.includes('failed') ||
+          status.includes('aborted')
+        ) {
+          clearStatusPolling();
+          setRecordingStatus(
+            `Recording ended with status: ${result.status}. ${result.error || ''}`,
+          );
+          activeEgressId = null;
+          startRecordingBtn.disabled = false;
+        } else {
+          setRecordingStatus(`Finalizing MP4... (${result.status})`);
+        }
+      } catch (error) {
+        console.error('[GPNBIHAR] Recording status check failed:', error);
+        setRecordingStatus('Waiting for recording status; retrying...');
+      }
+    }, 3000);
+  } catch (error) {
+    console.error('[GPNBIHAR] Stop recording failed:', error);
+    setRecordingStatus(`Could not stop recording: ${error.message}`);
+    stopRecordingBtn.disabled = false;
+  } finally {
+    recordingBusy = false;
+  }
+}
+
+startRecordingBtn.addEventListener('click', startRecording);
+stopRecordingBtn.addEventListener('click', stopRecording);
+
 
 function addVideo(track, container, label) {
   const wrapper = document.createElement('div');
@@ -211,6 +346,10 @@ async function joinStudio() {
 }
 
 async function leaveStudio() {
+  if (activeEgressId) {
+  setRecordingStatus('Stop the recording before leaving the studio.');
+  return;
+}
   const oldRoom = room;
   room = undefined;
 
@@ -230,6 +369,14 @@ async function leaveStudio() {
   leaveBtn.disabled = true;
   micBtn.disabled = true;
   cameraBtn.disabled = true;
+
+  clearStatusPolling();
+  sessionToken = null;
+  activeEgressId = null;
+  recordingBusy = false;
+  startRecordingBtn.disabled = true;
+  stopRecordingBtn.disabled = true;
+  setRecordingStatus('Recording not started');
 
   setStatus('Ready to start');
 }
